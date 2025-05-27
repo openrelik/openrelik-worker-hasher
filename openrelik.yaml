@@ -1,0 +1,12 @@
+# Showcase this worker on https://openrelik.org/marketplace
+publish: true
+
+# Worker Metadata. This section is required.
+display_name: SSDeep Fuzzy Hashing
+description: This worker computes SSDeep (fuzzy) hashes for submitted files. SSDeep hashes are useful for identifying similar files, even if they are not byte-for-byte identical, which is particularly helpful in malware analysis and digital forensics.
+
+# Optional: Third-Party Tools Used by the Worker.
+tools:
+  - display_name: ssdeep
+    description: A tool for computing context triggered piecewise hashes (CTPH), also known as fuzzy hashes. These hashes are used to determine the similarity between files.
+    url: https://github.com/ssdeep-project/ssdeep # URL for more info about the tool
