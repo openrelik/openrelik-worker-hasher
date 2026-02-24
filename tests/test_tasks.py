@@ -13,10 +13,10 @@
 # limitations under the License.
 """Tests tasks."""
 
-# Note: Use pytest for writing tests!
 import pytest
+import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 from src.tasks import command
 
@@ -30,60 +30,49 @@ def test_command_with_actual_file_input(
     mock_create_output_file,
     mock_subprocess_run,
     mock_get_input_files,
-    tmp_path,  # pytest fixture for a temporary directory path
+    tmp_path,
 ):
     """
     Test the command task with an actual input file from test_data,
-    mocking the ssdeep execution.
+    mocking the ssdeep execution and verifying the consolidated outputs.
     """
-    # --- Setup: Path to the actual input file ---
-    # Assuming pytest runs from the project root (openrelik-worker-hasher)
-    project_root = Path(
-        __file__
-    ).parent.parent  # Gets the 'openrelik-worker-hasher' directory
+    project_root = Path(__file__).parent.parent
     actual_input_file_path = project_root / "test_data" / "test.txt"
-    assert (
-        actual_input_file_path.exists()
-    ), f"Test input file not found: {actual_input_file_path}"
+    assert actual_input_file_path.exists()
 
-    # --- Setup Mocks ---
-    workflow_id = "test-workflow-actual-file"
+    workflow_id = "test-workflow"
     output_path_val = str(tmp_path)
 
-    # Mock get_input_files to return the actual file's details
     mock_input_file_dict = {
         "path": str(actual_input_file_path),
         "display_name": "test.txt",
-        "uuid": "file-uuid-actual",
     }
     mock_get_input_files.return_value = [mock_input_file_dict]
 
-    # Mock subprocess.run for ssdeep
+    # Mock subprocess.run
     mock_ssdeep_process = MagicMock()
     mock_ssdeep_process.returncode = 0
-    # Define a mock hash for the content of test_data/test.txt
-    # The actual hash for "test123OpenRelik\n" (if newline) or "test123OpenRelik"
-    # would be different. We are mocking the ssdeep tool's output.
-    expected_hash_part = "3:mockedHashForTestFile:"
-    mock_ssdeep_process.stdout = f'{expected_hash_part},"{actual_input_file_path.name}"'
-    mock_ssdeep_process.stderr = ""
+    expected_hash = "3:mockedHash"
+    mock_ssdeep_process.stdout = f'{expected_hash},"{actual_input_file_path.name}"'
     mock_subprocess_run.return_value = mock_ssdeep_process
 
-    # Mock create_output_file
-    expected_output_filename = "SSDeep hash for test.txt.ssdeep"
-    expected_output_file_path_obj = tmp_path / expected_output_filename
-    mock_output_file_obj = MagicMock()
-    mock_output_file_obj.path = str(expected_output_file_path_obj)
-    mock_output_file_obj.to_dict.return_value = {
-        "path": mock_output_file_obj.path,
-        "display_name": "SSDeep hash for test.txt",
-    }
-    mock_create_output_file.return_value = mock_output_file_obj
+    # Mock create_output_file for JSON and MD
+    mock_json_file = MagicMock()
+    mock_json_file.path = str(tmp_path / "ssdeep_results.json")
+    mock_json_file.to_dict.return_value = {"display_name": "ssdeep_results.json"}
 
-    mock_create_task_result.return_value = "mocked_task_result_actual_file"
+    mock_md_file = MagicMock()
+    mock_md_file.path = str(tmp_path / "ssdeep_results.md")
+    mock_md_file.to_dict.return_value = {"display_name": "ssdeep_results.md"}
+
+    mock_create_output_file.side_effect = [mock_json_file, mock_md_file]
+    mock_create_task_result.return_value = "mocked_result"
+
+    # Mock send_event on the task instance
+    command.send_event = MagicMock()
 
     # --- Call the task ---
-    result = command(
+    result = command.run(
         pipe_result=None,
         input_files=[mock_input_file_dict],
         output_path=output_path_val,
@@ -92,24 +81,121 @@ def test_command_with_actual_file_input(
     )
 
     # --- Assertions ---
-    mock_get_input_files.assert_called_once_with(None, [mock_input_file_dict])
     mock_subprocess_run.assert_called_once_with(
         ["ssdeep", "-s", "-b", str(actual_input_file_path)],
         capture_output=True,
         text=True,
         check=False,
     )
-    mock_create_output_file.assert_called_once_with(
-        output_path_val,
-        display_name="SSDeep hash for test.txt",
-        extension="ssdeep",
-        data_type="text/plain",
+
+    # Check progress event
+    command.send_event.assert_called_with(
+        "task-progress",
+        data={"status": "Processing file 1 of 1 with ssdeep..."}
     )
 
-    assert expected_output_file_path_obj.exists()
-    assert (
-        expected_output_file_path_obj.read_text(encoding="utf-8")
-        == expected_hash_part + "\n"
+    # Check output file creation calls
+    mock_create_output_file.assert_has_calls([
+        call(output_path_val, display_name="ssdeep_results", extension="json", data_type="application/json"),
+        call(output_path_val, display_name="ssdeep_results", extension="md", data_type="text/markdown"),
+    ])
+
+    # Verify JSON content
+    with open(mock_json_file.path, "r") as f:
+        json_data = json.load(f)
+        assert json_data == [{"filename": "test.txt", "ssdeep": expected_hash}]
+
+    # Verify MD content
+    with open(mock_md_file.path, "r") as f:
+        md_data = f.read()
+        assert "| test.txt | 3:mockedHash |" in md_data
+
+    assert result == "mocked_result"
+
+
+@patch("src.tasks.get_input_files")
+@patch("src.tasks.create_task_result")
+def test_command_no_input_files(mock_create_task_result, mock_get_input_files):
+    """Test the command task when no input files are provided."""
+    mock_get_input_files.return_value = []
+    mock_create_task_result.return_value = "no_files_result"
+
+    result = command.run(input_files=[])
+
+    assert result == "no_files_result"
+    mock_create_task_result.assert_called_once()
+    args, kwargs = mock_create_task_result.call_args
+    assert kwargs["meta"]["message"] == "No input files provided to calculate SSDeep hash."
+
+
+@patch("src.tasks.get_input_files")
+@patch("src.tasks.subprocess.run")
+@patch("src.tasks.create_output_file")
+@patch("src.tasks.create_task_result")
+def test_command_with_error_and_notice(
+    mock_create_task_result,
+    mock_create_output_file,
+    mock_subprocess_run,
+    mock_get_input_files,
+    tmp_path,
+):
+    """Test the command task with one failing file and one notice file."""
+    mock_input_files = [
+        {"path": "/path/to/error.txt", "display_name": "error.txt"},
+        {"path": "/path/to/small.txt", "display_name": "small.txt"},
+    ]
+    mock_get_input_files.return_value = mock_input_files
+
+    # Mock subprocess.run side effects
+    mock_error_process = MagicMock()
+    mock_error_process.returncode = 1
+    mock_error_process.stderr = "Permission denied"
+    mock_error_process.stdout = ""
+
+    mock_notice_process = MagicMock()
+    mock_notice_process.returncode = 0
+    mock_notice_process.stdout = "File too small"
+
+    mock_subprocess_run.side_effect = [mock_error_process, mock_notice_process]
+
+    # Mock output files
+    mock_json_file = MagicMock()
+    mock_json_file.path = str(tmp_path / "results.json")
+    mock_json_file.to_dict.return_value = {"display_name": "results.json"}
+    mock_md_file = MagicMock()
+    mock_md_file.path = str(tmp_path / "results.md")
+    mock_md_file.to_dict.return_value = {"display_name": "results.md"}
+    mock_create_output_file.side_effect = [mock_json_file, mock_md_file]
+
+    command.send_event = MagicMock()
+
+    command.run(
+        input_files=mock_input_files,
+        output_path=str(tmp_path)
     )
 
-    assert result == "mocked_task_result_actual_file"
+    # Verify JSON content for error and notice
+    with open(mock_json_file.path, "r") as f:
+        json_data = json.load(f)
+        assert json_data[0]["ssdeep"].startswith("Error running ssdeep")
+        assert "Permission denied" in json_data[0]["ssdeep"]
+        assert json_data[1]["ssdeep"] == "SSDeep notice: File too small"
+
+
+@patch("src.tasks.get_input_files")
+@patch("src.tasks.create_task_result")
+def test_command_missing_file_path(mock_create_task_result, mock_get_input_files):
+    """Test the command task with a file entry that has no path."""
+    mock_input_files = [{"display_name": "missing_path.txt"}]  # No 'path' key
+    mock_get_input_files.return_value = mock_input_files
+    mock_create_task_result.return_value = "no_output_result"
+
+    command.send_event = MagicMock()
+
+    result = command.run(input_files=mock_input_files)
+
+    assert result == "no_output_result"
+    # Verify no output files were generated (results list remained empty)
+    mock_create_task_result.assert_called_once()
+    args, kwargs = mock_create_task_result.call_args
+    assert kwargs["output_files"] == []

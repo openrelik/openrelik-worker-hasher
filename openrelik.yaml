@@ -2,8 +2,8 @@
 publish: false
 
 # Worker Metadata. This section is required.
-display_name: Ssdeep Hasher Worker
-description: Processor designed to calculate SSDeep
+display_name: Hasher Worker
+description: Processor designed to calculate various hashes for files.
 
 # Optional: Third-Party Tools Used by the Worker.
 tools:

@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "openrelik-worker-hasher"
 version = "0.1.0"
-description = "OpenRelik worker to calculate SSDeep (context-triggered piecewise hashes) for files."
+description = "OpenRelik worker to calculate various hashes for files."
 authors = ["Alexander Jaeger <mail@alexanderjaeger.de>"]
 readme = "README.md"
 package-mode = false
