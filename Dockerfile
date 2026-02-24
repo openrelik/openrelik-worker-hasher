@@ -8,6 +8,7 @@ RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selectio
 # Install poetry and any other dependency that your worker needs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-poetry \
+    ssdeep \
     # Add your dependencies here
     && rm -rf /var/lib/apt/lists/*
 
@@ -32,10 +33,6 @@ RUN poetry install --no-interaction --no-ansi
 
 # Copy files needed to build
 COPY . ./
-
-# Install ssdeep CLI tool
-RUN apt-get update && apt-get install -y ssdeep \
-    && rm -rf /var/lib/apt/lists/*
 
 # Install the worker and set environment to use the correct python interpreter.
 RUN poetry install && rm -rf $POETRY_CACHE_DIR
