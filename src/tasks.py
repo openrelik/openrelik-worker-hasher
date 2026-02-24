@@ -69,7 +69,9 @@ def command(
     input_files = get_input_files(pipe_result, input_files or [])
     output_files = []
     # General command for execution and reporting.
-    base_command = ["ssdeep", "-s", "-b"]
+    # -s: Silent mode (suppresses errors to stderr, prints them to stdout)
+    # -b: Bare mode (strips directory paths from filename in output, if any)
+    base_command = ["/usr/bin/ssdeep", "-s", "-b"]
 
     if not input_files:
         return create_task_result(
@@ -99,8 +101,6 @@ def command(
         )
 
         # Run the command
-        # -s: Silent mode (suppresses errors to stderr, prints them to stdout)
-        # -b: Bare mode (strips directory paths from filename in output, if any)
         cmd_to_run = base_command + [input_file_path]
 
         process = subprocess.run(

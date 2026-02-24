@@ -82,7 +82,7 @@ def test_command_with_actual_file_input(
 
     # --- Assertions ---
     mock_subprocess_run.assert_called_once_with(
-        ["ssdeep", "-s", "-b", str(actual_input_file_path)],
+        ["/usr/bin/ssdeep", "-s", "-b", str(actual_input_file_path)],
         capture_output=True,
         text=True,
         check=False,
